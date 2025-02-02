@@ -2,7 +2,7 @@ import SwiftUI
 import FamilyControls
 
 struct HomeView: View {
-    @StateObject private var viewModel = HomeViewModel()
+    @ObservedObject var viewModel: HomeViewModel  // Pass viewModel instead of creating a new one
     @State private var showSettings: Bool = false
     @State private var animateGradient: Bool = false
 
@@ -26,10 +26,9 @@ struct HomeView: View {
                                      breakValue: $viewModel.settings.initialBreakValue,
                                      totalCycles: $viewModel.settings.totalCycles)
                             .onDisappear {
-                                viewModel.applySettings() // Apply updated settings after closing
+                                viewModel.applySettings()
                             }
                     }
-
                 }
 
                 HStack {
@@ -90,41 +89,20 @@ struct HomeView: View {
 
                 Spacer()
 
-                HStack {
-                    Spacer()
-                    Text("Cycles: \(viewModel.settings.totalCycles)")
-                        .font(.custom("SFProDisplay-Regular", size: 16))
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding()
-                }
-
                 Button("Select Apps to Block") {
                     viewModel.isPickerPresented = true
                 }
                 .familyActivityPicker(isPresented: $viewModel.isPickerPresented, selection: $viewModel.selectedApps)
                 .foregroundColor(.white)
             }
-            .frame(maxWidth: .infinity)
-            .foregroundColor(.black)
-            .padding(.horizontal)
-            .multilineTextAlignment(.center)
-            .background {
-                LinearGradient(colors: [startColor, endColor], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .edgesIgnoringSafeArea(.all)
-                    .hueRotation(.degrees(animateGradient ? 45 : 0))
-                    .onAppear {
-                        viewModel.requestScreenTimeAuthorization()
-                        withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
-                            animateGradient.toggle()
-                        }
-                    }
+            .onAppear {
+                viewModel.resumeTimer() // Ensures timer runs even after backgrounding
+               
             }
-        }
-    }
-}
+           
 
-struct HomeView_Previews: PreviewProvider {
-    static var previews: some View {
-        HomeView()
+            .background(LinearGradient(colors: [startColor, endColor], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .edgesIgnoringSafeArea(.all))
+        }
     }
 }

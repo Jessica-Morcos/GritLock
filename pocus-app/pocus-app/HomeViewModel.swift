@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import FamilyControls
 import ManagedSettings
+import BackgroundTasks
 
 class HomeViewModel: ObservableObject {
     @Published var settings = AppSettings()
@@ -10,14 +11,25 @@ class HomeViewModel: ObservableObject {
     @Published var currentCycle: Int = 1
     @Published var isPickerPresented: Bool = false
     @Published var selectedApps = FamilyActivitySelection()
+    @Published var timerRunning: Bool = false
 
     private var timer: AnyCancellable?
     private var store = ManagedSettingsStore()
     private var lastPressTime: Date = Date()
-
+    
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    
     var timerString: String {
         let time = isBreak ? settings.breakValue : settings.timerValue
         return String(format: "%02d:%02d", time / 60, time % 60)
+    }
+
+    init() {
+        if UserDefaults.standard.bool(forKey: "timerRunning") {
+            resumeTimer()
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 
     func handleButtonPress() {
@@ -29,16 +41,14 @@ class HomeViewModel: ObservableObject {
             if isBreak {
                 stopTimer()
                 isBreak = false
-                settings.timerValue = settings.timerValue 
                 resetTimerValues()
                 unlockApps()
             }
         } else {
-            if timer == nil {
+            if !timerRunning {
                 startTimer()
             } else if isBreak {
                 stopTimer()
-                
             }
         }
     }
@@ -49,35 +59,54 @@ class HomeViewModel: ObservableObject {
                 try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
                 print("Screen Time authorization granted.")
             } catch {
-                print("Screen Time authorization failed: \(error)")
+                print("Screen Time authorization failed: \(error.localizedDescription)")
             }
         }
     }
 
-    func startTimer() {
-        let totalTime = isBreak ? settings.breakValue : settings.timerValue
 
+    func startTimer() {
+        timerRunning = true
+        UserDefaults.standard.set(true, forKey: "timerRunning")
+        
+        startBackgroundTask() // Keep app alive in background
+        
         if isBreak {
             unlockApps()
         } else {
             lockApps()
         }
 
-        timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect().sink { _ in
-            if self.isBreak {
-                if self.settings.breakValue > 0 {
-                    self.settings.breakValue -= 1
-                    self.progress = CGFloat(self.settings.initialBreakValue - self.settings.breakValue) / CGFloat(self.settings.initialBreakValue)
-                } else {
-                    self.endBreak()
-                }
+        timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect().sink { [weak self] _ in
+            guard let self = self else { return }
+            self.updateTimer()
+        }
+    }
+    
+    @objc func appMovedToBackground() {
+        print("App moved to background. Keeping timer active.")
+        startBackgroundTask()
+    }
+
+    @objc func appMovedToForeground() {
+        print("App moved to foreground. Resuming tasks.")
+        resumeTimer()
+    }
+
+    func updateTimer() {
+        if isBreak {
+            if settings.breakValue > 0 {
+                settings.breakValue -= 1
+                progress = CGFloat(settings.initialBreakValue - settings.breakValue) / CGFloat(settings.initialBreakValue)
             } else {
-                if self.settings.timerValue > 0 {
-                    self.settings.timerValue -= 1
-                    self.progress = CGFloat(self.settings.initialTimerValue - self.settings.timerValue) / CGFloat(self.settings.initialTimerValue)
-                } else {
-                    self.endWork()
-                }
+                endBreak()
+            }
+        } else {
+            if settings.timerValue > 0 {
+                settings.timerValue -= 1
+                progress = CGFloat(settings.initialTimerValue - settings.timerValue) / CGFloat(settings.initialTimerValue)
+            } else {
+                endWork()
             }
         }
     }
@@ -87,7 +116,7 @@ class HomeViewModel: ObservableObject {
         unlockApps()
         if currentCycle < settings.totalCycles {
             isBreak = true
-            settings.breakValue = settings.breakValue
+            settings.breakValue = settings.initialBreakValue
             startTimer()
         } else {
             resetTimerValues()
@@ -100,7 +129,7 @@ class HomeViewModel: ObservableObject {
         currentCycle += 1
         if currentCycle <= settings.totalCycles {
             isBreak = false
-            settings.timerValue = settings.timerValue
+            settings.timerValue = settings.initialTimerValue
             startTimer()
         } else {
             resetTimerValues()
@@ -108,12 +137,14 @@ class HomeViewModel: ObservableObject {
     }
 
     func stopTimer() {
+        timerRunning = false
+        UserDefaults.standard.set(false, forKey: "timerRunning")
         timer?.cancel()
         timer = nil
+        endBackgroundTask()
     }
 
     func resetTimerValues() {
-      
         settings.timerValue = settings.initialTimerValue
         settings.breakValue = settings.initialBreakValue
         progress = 0.0
@@ -122,21 +153,48 @@ class HomeViewModel: ObservableObject {
     }
 
     func applySettings() {
-      
         settings.timerValue = settings.initialTimerValue
         settings.breakValue = settings.initialBreakValue
         resetTimerValues()
     }
 
     func lockApps() {
-        guard !selectedApps.applicationTokens.isEmpty else {
-            print("No apps selected for locking.")
-            return
+        Task {
+            guard !selectedApps.applicationTokens.isEmpty else {
+                print("No apps selected for locking.")
+                return
+            }
+            store.shield.applications = selectedApps.applicationTokens
+            print("Apps locked successfully.")
         }
-        store.shield.applications = selectedApps.applicationTokens
     }
 
     func unlockApps() {
-        store.shield.applications = nil
+        Task {
+            store.shield.applications = nil
+            print("Apps unlocked successfully.")
+        }
+    }
+
+
+    func resumeTimer() {
+        guard UserDefaults.standard.bool(forKey: "timerRunning") else { return }
+        startTimer()
+    }
+    
+    // MARK: - Background Task Handling
+    private func startBackgroundTask() {
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask {
+            self.endBackgroundTask()
+        }
+        print("Background task started.")
+    }
+
+    private func endBackgroundTask() {
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+            print("Background task ended.")
+        }
     }
 }
