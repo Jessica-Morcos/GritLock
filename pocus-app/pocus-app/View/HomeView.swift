@@ -115,11 +115,12 @@ struct HomeView: View {
                         .padding()
                 }
 
-                // FamilyActivityPicker to Select Apps
+
                 Button("Select Apps to Block") {
                     isPickerPresented = true
                 }
                 .familyActivityPicker(isPresented: $isPickerPresented, selection: $selectedApps)
+
                 .onChange(of: selectedApps) {
                     print("Selected apps: \(selectedApps.applicationTokens)") // Debugging print
                     lockApps()
@@ -127,6 +128,7 @@ struct HomeView: View {
                 .onAppear {
                     requestScreenTimeAuthorization()
                 }
+
 /*
                 Button("Lock Apps") {
                     lockApps()
@@ -151,12 +153,14 @@ struct HomeView: View {
             }
         }
     }
-    
+
     func requestScreenTimeAuthorization() {
         Task {
             do {
                 try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+
                 print("Screen Time authorization granted.")
+
             } catch {
                 print("Screen Time authorization failed: \(error)")
             }
@@ -193,6 +197,7 @@ struct HomeView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
   
+
    
 
     // Lock and Unlock Apps based on current state
