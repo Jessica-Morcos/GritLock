@@ -85,12 +85,17 @@ class HomeViewModel: ObservableObject {
     
     @objc func appMovedToBackground() {
         print("App moved to background. Keeping timer active.")
-        startBackgroundTask()
+        if backgroundTaskID == .invalid {
+            startBackgroundTask()
+        }
     }
 
     @objc func appMovedToForeground() {
         print("App moved to foreground. Resuming tasks.")
-        resumeTimer()
+        endBackgroundTask() // End any lingering background tasks
+        if timerRunning {
+            resumeTimer() // Ensure the timer continues running in the foreground
+        }
     }
 
     func updateTimer() {
@@ -184,17 +189,19 @@ class HomeViewModel: ObservableObject {
     
     // MARK: - Background Task Handling
     private func startBackgroundTask() {
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask {
-            self.endBackgroundTask()
+        if backgroundTaskID == .invalid {
+            backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Keep Timer Active") {
+                self.endBackgroundTask()
+            }
+            print("Background task started with ID: \(backgroundTaskID)")
         }
-        print("Background task started.")
     }
 
     private func endBackgroundTask() {
         if backgroundTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            print("Background task ended with ID: \(backgroundTaskID)")
             backgroundTaskID = .invalid
-            print("Background task ended.")
         }
     }
 }
