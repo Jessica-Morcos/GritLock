@@ -97,9 +97,12 @@ struct HomeView: View {
             }
             .onAppear {
                 viewModel.resumeTimer() // Ensures timer runs even after backgrounding
+                OrientationLock.lockOrientation(.portrait, rotateTo: .portrait)
                
             }
-           
+            .onDisappear {
+                OrientationLock.lockOrientation(.all) // Reset if needed for other views
+            }
 
             .background(LinearGradient(colors: [startColor, endColor], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .edgesIgnoringSafeArea(.all))
