@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Pocus_logo.png",
+      "filename" : "pocusAppIcon.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

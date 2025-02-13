@@ -25,12 +25,29 @@ class HomeViewModel: ObservableObject {
     }
 
     init() {
-        if UserDefaults.standard.bool(forKey: "timerRunning") {
-            resumeTimer()
-        }
+        print("App restarted: Resetting timer and unlocking apps.")
+
+        // Reset timer values to defaults
+        settings.timerValue = settings.initialTimerValue
+        settings.breakValue = settings.initialBreakValue
+        isBreak = false
+        currentCycle = 1
+        timerRunning = false
+
+        // Ensure apps are unlocked on restart
+        unlockApps()
+        
+        // Remove stored timer states to prevent unwanted resume
+        UserDefaults.standard.set(false, forKey: "timerRunning")
+        UserDefaults.standard.removeObject(forKey: "savedTimerValue")
+        UserDefaults.standard.removeObject(forKey: "savedBreakValue")
+        UserDefaults.standard.removeObject(forKey: "isBreak")
+
         NotificationCenter.default.addObserver(self, selector: #selector(appMovedToBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
     }
+
+
 
     func handleButtonPress() {
         let currentTime = Date()
@@ -84,11 +101,21 @@ class HomeViewModel: ObservableObject {
     }
     
     @objc func appMovedToBackground() {
-        print("App moved to background. Keeping timer active.")
-        if backgroundTaskID == .invalid {
+        print("App moved to background. Keeping timer active if running.")
+        
+        UserDefaults.standard.set(true, forKey: "appWasBackgrounded") // Mark as backgrounded
+        
+        if timerRunning {
+            UserDefaults.standard.set(settings.timerValue, forKey: "savedTimerValue")
+            UserDefaults.standard.set(settings.breakValue, forKey: "savedBreakValue")
+            UserDefaults.standard.set(isBreak, forKey: "isBreak")
+        }
+        
+        if backgroundTaskID == .invalid && timerRunning {
             startBackgroundTask()
         }
     }
+
 
     @objc func appMovedToForeground() {
         print("App moved to foreground. Resuming tasks.")
@@ -183,9 +210,23 @@ class HomeViewModel: ObservableObject {
 
 
     func resumeTimer() {
-        guard UserDefaults.standard.bool(forKey: "timerRunning") else { return }
+        guard timerRunning else {
+            print("Timer was not running before restart, not resuming.")
+            return
+        }
+        
+        let wasRestarted = !UserDefaults.standard.bool(forKey: "appWasBackgrounded")
+        
+        if wasRestarted {
+            print("App was restarted. Timer will not resume automatically.")
+            stopTimer()  // Ensure the timer fully stops
+            return
+        }
+        
+        print("Resuming existing timer session...")
         startTimer()
     }
+
     
     // MARK: - Background Task Handling
     private func startBackgroundTask() {
